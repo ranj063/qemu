@@ -40,6 +40,7 @@
 #define ADSP_CAVS_HOST_DRAM_BASE     (ADSP_CAVS_MMIO_BASE + 0x00100000)
 #define ADSP_CAVS_HOST_SHIM_BASE     (ADSP_CAVS_MMIO_BASE + 0x00140000)
 #define ADSP_CAVS_HOST_MAILBOX_BASE  (ADSP_CAVS_MMIO_BASE + 0x00144000)
+#define ADSP_CAVS_HOST_IPC_BASE	     (ADSP_CAVS_MMIO_BASE + 0x00148040)
 
 /*
  * ROM
@@ -61,11 +62,11 @@
 #define ADSP_CAVS_1_5_DSP_RES_SIZE       0x00000010
 
 #define ADSP_CAVS_1_5_DSP_IPC_HOST_BASE  0x00001180
-#define ADSP_CAVS_1_5_DSP_IPC_HOST_SIZE  0x00000020
+#define ADSP_CAVS_1_5_DSP_IPC_HOST_SIZE  0x00000040
 
-#define ADSP_CAVS_1_5_DSP_IPC_DSP_SIZE   0x00000080
-#define ADSP_CAVS_1_5_DSP_IPC_DSP_BASE(x) \
-    (0x00001200 + x * ADSP_CAVS_1_5_DSP_IPC_DSP_SIZE)
+#define ADSP_CAVS_1_5_DSP_IDC_DSP_SIZE   0x00000080
+#define ADSP_CAVS_1_5_DSP_IDC_DSP_BASE(x) \
+    (0x00001200 + x * ADSP_CAVS_1_5_DSP_IDC_DSP_SIZE)
 
 #define ADSP_CAVS_1_5_DSP_HOST_WIN_SIZE  0x00000008
 #define ADSP_CAVS_1_5_DSP_HOST_WIN_BASE(x) \
@@ -365,7 +366,25 @@ void cavs_ext_timer_cb1(void *opaque);
 #define IPC_DIPCIE       0xc
 #define IPC_DIPCIE_DONE       (0x1 << 30)
 
-#define IPC_DIPCCTL5       0x10
+#define IPC_DIPCCTL5		 0x10
+#define IPC_DIPCCTL5_IPCIDIE     (1 << 1)
+#define IPC_DIPCCTL5_IPCTBIE     (1 << 0)
+
+/*
+ * IPC -v1.5 DSP registers
+ * On the real device, these are the host side doorbell registers.
+ * Kepping these part of the same io region as the DSP doorbell registers
+ * in QEMU.
+ */
+#define IPC_DSP_REG_BASE	0x20
+#define IPC_HIPCT		(IPC_DSP_REG_BASE + 0x0)
+#define IPC_HIPCT_BUSY		(0x1 << 31)
+#define IPC_HIPCTE		(IPC_DSP_REG_BASE + 0x4)
+#define IPC_HIPCI		(IPC_DSP_REG_BASE + 0x8)
+#define IPC_HIPCI_BUSY		(0x1 << 31)
+#define IPC_HIPCIE		(IPC_DSP_REG_BASE + 0xC)
+#define IPC_HIPCIE_DONE		(0x1 << 31)
+#define IPC_HIPCCTL		(IPC_DSP_REG_BASE + 0x10)
 
 /* IPC v1.8 */
 #define IPC_DIPCTDR     0x0

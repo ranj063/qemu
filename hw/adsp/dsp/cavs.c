@@ -366,7 +366,7 @@ static struct adsp_dev *adsp_init(const struct adsp_desc *board,
     void *rom;
 
     adsp = g_malloc(sizeof(*adsp));
-    adsp->log = log_init(NULL);    /* TODO: add log name to cmd line */
+    adsp->log = log_init("apl-qemu.txt");    /* TODO: add log name to cmd line */
     adsp->desc = board;
     adsp->shm_idx = 0;
     adsp->system_memory = get_system_memory();
@@ -519,6 +519,7 @@ static void cavs_irq_write(void *opaque, hwaddr addr,
 
     switch (addr) {
     case ILMSD(2):
+	printf("ranjani: level 2 mask set\n");
         /* mask set - level 2 */
         if (!(info->region[ILMC(2) >> 2] & val)) {
             info->region[ILMC(2) >> 2] |= val;
@@ -567,21 +568,23 @@ static void cavs_irq_write(void *opaque, hwaddr addr,
         }
         break;
     case ILMCD(2):
-         /* mask clear - level 2 */
-         if (info->region[ILMC(2) >> 2] & val) {
-             info->region[ILMC(2) >> 2] &= ~val;
+	printf("ranjani: level 2 mask clear\n");
+        /* mask clear - level 2 */
+        if (info->region[ILMC(2) >> 2] & val) {
+            info->region[ILMC(2) >> 2] &= ~val;
 
             info->region[ILSC(2) >> 2] =
                 (~info->region[ILMC(2) >> 2]) & info->region[ILRSD(2) >> 2];
 
             if (!info->region[ILSC(2) >> 2])
                  adsp_set_lvl1_irq(adsp, IRQ_NUM_EXT_LEVEL2, 1);
+
         }
         break;
-     case ILMCD(3):
-         /* mask clear - level 3 */
-         if (info->region[ILMC(3) >> 2] & val) {
-             info->region[ILMC(3) >> 2] &= ~val;
+    case ILMCD(3):
+        /* mask clear - level 3 */
+        if (info->region[ILMC(3) >> 2] & val) {
+            info->region[ILMC(3) >> 2] &= ~val;
 
             info->region[ILSC(3) >> 2] =
                 (~info->region[ILMC(3) >> 2]) & info->region[ILRSD(3) >> 2];
@@ -590,10 +593,10 @@ static void cavs_irq_write(void *opaque, hwaddr addr,
                  adsp_set_lvl1_irq(adsp, IRQ_NUM_EXT_LEVEL3, 1);
         }
         break;
-     case ILMCD(4):
-         /* mask clear - level 4 */
-         if (info->region[ILMC(4) >> 2] & val) {
-             info->region[ILMC(4) >> 2] &= ~val;
+    case ILMCD(4):
+        /* mask clear - level 4 */
+        if (info->region[ILMC(4) >> 2] & val) {
+            info->region[ILMC(4) >> 2] &= ~val;
 
             info->region[ILSC(4) >> 2] =
                 (~info->region[ILMC(4) >> 2]) & info->region[ILRSD(4) >> 2];
@@ -603,10 +606,10 @@ static void cavs_irq_write(void *opaque, hwaddr addr,
         }
         break;
 
-     case ILMCD(5):
-         /* mask clear - level 5 */
-         if (info->region[ILMC(5) >> 2] & val) {
-             info->region[ILMC(5) >> 2] &= ~val;
+    case ILMCD(5):
+        /* mask clear - level 5 */
+        if (info->region[ILMC(5) >> 2] & val) {
+            info->region[ILMC(5) >> 2] &= ~val;
 
             info->region[ILSC(5) >> 2] =
                 (~info->region[ILMC(5) >> 2]) & info->region[ILRSD(5) >> 2];
@@ -616,7 +619,7 @@ static void cavs_irq_write(void *opaque, hwaddr addr,
         }
         break;
     default:
-    break;
+        break;
     }
 
     log_write(adsp->log, space, addr, val, size,
@@ -655,6 +658,7 @@ static void cavs_ipc_1_5_write(void *opaque, hwaddr addr,
     struct adsp_dev *adsp = info->adsp;
     struct adsp_reg_space *space = info->space;
     struct qemu_io_msg_irq irq;
+    uint32_t hipct;
 
     log_write(adsp->log, space, addr, val, size,
         info->region[addr >> 2]);
@@ -662,17 +666,34 @@ static void cavs_ipc_1_5_write(void *opaque, hwaddr addr,
     /* special case registers */
     switch (addr) {
     case IPC_DIPCT:
-        /* host to DSP */
-        if (val & IPC_DIPCT_DSPLRST)
+        /* DSP to host notify */
+        if (val & IPC_DIPCT_DSPLRST) {
             info->region[addr >> 2] &= ~IPC_DIPCT_DSPLRST;
-    break;
+	    info->region[IPC_HIPCIE >> 2] |= IPC_HIPCIE_DONE;
+
+	    log_text(adsp->log, LOG_IRQ_DONE,
+		     "irq: send done interrupt 0x%8.8lx\n", val);
+
+	    /* send IRQ to parent */
+            irq.hdr.type = QEMU_IO_TYPE_IRQ;
+            irq.hdr.msg = QEMU_IO_MSG_IRQ;
+            irq.hdr.size = sizeof(irq);
+            irq.irq = 0;
+
+            qemu_io_send_msg(&irq.hdr);
+	}
+	break;
     case IPC_DIPCI:
-        /* DSP to host */
+
+        /* DSP to host IPC message */
         info->region[addr >> 2] = val;
+	hipct = val & ~IPC_HIPCT_BUSY;
+	hipct |= val & IPC_DIPCI_DSPRST ? IPC_HIPCT_BUSY : 0;
+	info->region[IPC_HIPCT >> 2] = hipct;
 
         if (val & IPC_DIPCI_DSPRST) {
             log_text(adsp->log, LOG_IRQ_BUSY,
-                "irq: send busy interrupt 0x%8.8lx\n", val);
+                "irq: send busy interrupt 0x%8.8lx %x\n", val, hipct);
 
             /* send IRQ to parent */
             irq.hdr.type = QEMU_IO_TYPE_IRQ;
@@ -682,12 +703,14 @@ static void cavs_ipc_1_5_write(void *opaque, hwaddr addr,
 
             qemu_io_send_msg(&irq.hdr);
         }
-        case IPC_DIPCIE:
+	break;
+   case IPC_DIPCIE:
             info->region[addr >> 2] = val & ~(0x1 << 31);
             if (val & IPC_DIPCIE_DONE)
                 info->region[addr >> 2] &= ~IPC_DIPCIE_DONE;
         break;
-        case IPC_DIPCCTL5:
+   case IPC_DIPCCTL5:
+	    printf("ranjani DIPCCTL 0x%lx\n", val);
              /* assume interrupts are not masked atm */
              info->region[addr >> 2] = val;
         break;
@@ -711,9 +734,9 @@ static struct adsp_reg_space cavs_1_5_io[] = {
         { .name = "ipc", .reg_count = 0, .reg = NULL, .ops = &cavs_ipc_v1_5_io_ops,
             .desc = {.base = ADSP_CAVS_1_5_DSP_IPC_HOST_BASE, .size = ADSP_CAVS_1_5_DSP_IPC_HOST_SIZE},},
         { .name = "idc0", .reg_count = 0, .reg = NULL,
-            .desc = {.base = ADSP_CAVS_1_5_DSP_IPC_DSP_BASE(0), .size = ADSP_CAVS_1_5_DSP_IPC_DSP_SIZE},},
+            .desc = {.base = ADSP_CAVS_1_5_DSP_IDC_DSP_BASE(0), .size = ADSP_CAVS_1_5_DSP_IDC_DSP_SIZE},},
         { .name = "idc1", .reg_count = 0, .reg = NULL,
-            .desc = {.base = ADSP_CAVS_1_5_DSP_IPC_DSP_BASE(1), .size = ADSP_CAVS_1_5_DSP_IPC_DSP_SIZE},},
+            .desc = {.base = ADSP_CAVS_1_5_DSP_IDC_DSP_BASE(1), .size = ADSP_CAVS_1_5_DSP_IDC_DSP_SIZE},},
         { .name = "hostwin0", .reg_count = 0, .reg = NULL,
             .desc = {.base = ADSP_CAVS_1_5_DSP_HOST_WIN_BASE(0), .size = ADSP_CAVS_1_5_DSP_HOST_WIN_SIZE},},
         { .name = "hostwin1", .reg_count = 0, .reg = NULL,
